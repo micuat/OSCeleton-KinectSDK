@@ -199,4 +199,53 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 }
             }
     }
+
+    class FaceFeatureTrackingInformation : TrackingInformation
+    {
+        int user;
+        double time;
+        EnumIndexableCollection<FeaturePoint, PointF> c;
+
+        public FaceFeatureTrackingInformation(int sensorId, int user, EnumIndexableCollection<FeaturePoint, PointF> c, double time)
+        {
+            this.sensorId = sensorId;
+            this.user = user;
+            this.c = c;
+            this.time = time;
+        }
+
+        public override void Send(UdpWriter osc, StreamWriter fileWriter, int pointScale)
+        {
+            if (osc != null)
+            {
+                object[] array = new object[3 + c.Count * 2];
+                array[0] = sensorId;
+                array[1] = user;
+                int count = 2;
+                foreach (PointF p in c)
+                {
+                    array[count] = p.X;
+                    count++;
+                    array[count] = p.Y;
+                    count++;
+                }
+                array[count] = time;
+                osc.Send(new OscElement(
+                    "/face_feature",
+                    array));
+            }
+/*            if (fileWriter != null)
+            {
+                fileWriter.WriteLine("FaceAnimation," +
+                    sensorId + "," + user + "," +
+                    c[AnimationUnit.LipRaiser].ToString().Replace(",", ".") + "," +
+                    c[AnimationUnit.LipStretcher].ToString().Replace(",", ".") + "," +
+                    c[AnimationUnit.LipCornerDepressor].ToString().Replace(",", ".") + "," +
+                    c[AnimationUnit.JawLower].ToString().Replace(",", ".") + "," +
+                    c[AnimationUnit.BrowLower].ToString().Replace(",", ".") + "," +
+                    c[AnimationUnit.BrowRaiser].ToString().Replace(",", ".") + "," +
+                    time.ToString().Replace(",", "."));
+            }*/
+        }
+    }
 }

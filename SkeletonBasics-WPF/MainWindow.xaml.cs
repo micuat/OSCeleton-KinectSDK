@@ -31,12 +31,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
     {
 
         // Settings
-        private bool allUsers = true;
+        private bool allUsers = false;
         private bool fullBody = false;
         private bool faceTracking = true;
-        private bool faceTracking2DMesh = true;
-        private bool faceTrackingHeadPose = true;
-        private bool faceTrackingAnimationUnits = true;
+        private bool faceTracking2DMesh = false;
+        private bool faceTrackingHeadPose = false;
+        private bool faceTrackingAnimationUnits = false;
+        private bool faceTrackingFeaturePoints = true;
         private bool writeOSC = true;
         private bool writeCSV = true;
         private bool useUnixEpochTime = true;
@@ -211,6 +212,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 if ("faceTracking2DMesh".ToLower().Equals(args[index])) faceTracking2DMesh = StringToBool(args[index + 1]);
                 if ("faceTrackingHeadPose".ToLower().Equals(args[index])) faceTrackingHeadPose = StringToBool(args[index + 1]);
                 if ("faceTrackingAnimationUnits".ToLower().Equals(args[index])) faceTrackingAnimationUnits = StringToBool(args[index + 1]);
+                if ("faceTrackingFeaturePoints".ToLower().Equals(args[index])) faceTrackingFeaturePoints = StringToBool(args[index + 1]);
                 if ("writeOSC".ToLower().Equals(args[index])) writeOSC = StringToBool(args[index + 1]);
                 if ("writeCSV".ToLower().Equals(args[index])) writeCSV = StringToBool(args[index + 1]);
                 if ("useUnixEpochTime".ToLower().Equals(args[index])) useUnixEpochTime = StringToBool(args[index + 1]);
@@ -646,6 +648,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             fileWriter.WriteLine("Joint, sensor, user, joint, x, y, z, confidence, time");
             fileWriter.WriteLine("Face, sensor, user, x, y, z, pitch, yaw, roll, time");
             fileWriter.WriteLine("FaceAnimation, sensor, user, lip_raise, lip_stretcher, lip_corner_depressor, jaw_lower, brow_lower, brow_raise, time");
+            // TODO: featurepoints to be added
             SetStatusbarText( "Writing to file " + DateTime.Now.ToLongTimeString(), Colors.Orange);
         }
 
@@ -859,6 +862,11 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 {
                     EnqueueFaceAnimationMessage(sensorId, user, faceFrame.GetAnimationUnitCoefficients(), useUnixEpochTime ? getUnixEpochTime() : stopwatch.ElapsedMilliseconds);
                 }
+
+                if (faceTrackingFeaturePoints)
+                {
+                    EnqueueFaceFeatureMessage(sensorId, user, faceFrame.GetProjected3DShape(), useUnixEpochTime ? getUnixEpochTime() : stopwatch.ElapsedMilliseconds);
+                }
             }
         }
 
@@ -888,6 +896,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             if (!capturing) { return; }
             if (c == null) { return; }
             trackingInformationQueue.Add(new FaceAnimationTrackingInformation(sensorId, user, c, time));
+        }
+
+        void EnqueueFaceFeatureMessage(int sensorId, int user, EnumIndexableCollection<FeaturePoint, PointF> c, double time)
+        {
+            if (!capturing) { return; }
+            if (c == null) { return; }
+            trackingInformationQueue.Add(new FaceFeatureTrackingInformation(sensorId, user, c, time));
         }
 
         private string GetErrorText(Exception ex)
