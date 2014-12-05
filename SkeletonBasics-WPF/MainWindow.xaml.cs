@@ -34,10 +34,10 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private bool allUsers = false;
         private bool fullBody = false;
         private bool faceTracking = true;
-        private bool faceTracking2DMesh = false;
+        private bool faceTracking2DMesh = true;
         private bool faceTrackingHeadPose = false;
         private bool faceTrackingAnimationUnits = false;
-        private bool faceTrackingFeaturePoints = true;
+        private bool faceTrackingFeaturePoints = false;
         private bool writeOSC = true;
         private bool writeCSV = true;
         private bool useUnixEpochTime = true;
@@ -849,6 +849,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 {
                     // TODO
                     // faceFrame.Get3DShape[FeaturePoint.]
+                    EnqueueFaceMeshMessage(sensorId, user, faceFrame.Get3DShape(), useUnixEpochTime ? getUnixEpochTime() : stopwatch.ElapsedMilliseconds);
                 }
 
                 if (faceTrackingHeadPose)
@@ -883,6 +884,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 if (i != null && capturing)
                     i.Send(osc, fileWriter, pointScale);
             }
+        }
+
+        void EnqueueFaceMeshMessage(int sensorId, int user, EnumIndexableCollection<FeaturePoint, Vector3DF> c, double time)
+        {
+            if (!capturing) { return; }
+            if (c == null) { return; }
+            trackingInformationQueue.Add(new FaceMeshTrackingInformation(sensorId, user, c, time));
         }
 
         void EnqueueFacePoseMessage(int sensorId, int user, float x, float y, float z, float rotationX, float rotationY, float rotationZ, double time)
