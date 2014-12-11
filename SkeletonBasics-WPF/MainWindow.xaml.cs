@@ -35,14 +35,14 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private bool fullBody = false;
         private bool faceTracking = true;
         private bool faceTracking2DMesh = true;
-        private bool faceTrackingHeadPose = false;
-        private bool faceTrackingAnimationUnits = false;
+        private bool faceTrackingHeadPose = true;
+        private bool faceTrackingAnimationUnits = true;
         private bool faceTrackingFeaturePoints = false;
         private bool writeOSC = true;
         private bool writeCSV = true;
         private bool useUnixEpochTime = true;
         private String oscHost = "127.0.0.1";
-        private int oscPort = 7110;
+        private int oscPort = 57120;
         private const int skeletonCount = 6;
         private const int pointScale = 1000;
 
@@ -57,7 +57,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private bool capturing = true;
         private BlockingCollection<TrackingInformation> trackingInformationQueue = new BlockingCollection<TrackingInformation>();
         Thread sendTracking;
-        private UdpWriter osc;
+        private UdpWriter osc, osc2;
         private StreamWriter fileWriter;
         private Stopwatch stopwatch;
 
@@ -234,6 +234,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             if (writeOSC)
             {
                 osc = new UdpWriter(oscHost, oscPort);
+                osc2 = new UdpWriter(oscHost, oscPort+1);
             }
             if (writeCSV)
             {
@@ -882,7 +883,10 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             while (true) {
                 TrackingInformation i = trackingInformationQueue.Take();
                 if (i != null && capturing)
+                {
                     i.Send(osc, fileWriter, pointScale);
+                    i.Send(osc2, fileWriter, pointScale);
+                }
             }
         }
 
