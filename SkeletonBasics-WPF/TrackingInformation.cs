@@ -97,7 +97,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         {
             if (osc != null)
             {
-                osc.Send(new OscElement("/joint", oscMapping[joint], sensorId, user, (float)(x * pointScale), (float)(-y * pointScale), (float)(z * pointScale), (float)confidence, time));
+                osc.Send(new OscElement("/osceleton/joint", oscMapping[joint], sensorId, user, (float)(x * pointScale), (float)(-y * pointScale), (float)(z * pointScale), (float)confidence, time));
             }
             if (fileWriter != null)
             {
@@ -145,7 +145,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 }
                 array[count] = time;
                 osc.Send(new OscElement(
-                    "/face_mesh",
+                    "/osceleton/face_mesh",
                     array));
             }
             /*            if (fileWriter != null)
@@ -187,7 +187,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             if (osc != null)
             {
                 osc.Send(new OscElement(
-                    "/face",
+                    "/osceleton/face",
                     sensorId, user,
                     (float)(x * pointScale), (float)(-y * pointScale), (float)(z * pointScale),
                     rotationX, rotationY, rotationZ,
@@ -226,7 +226,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 if (osc != null)
                 {
                     osc.Send(new OscElement(
-                        "/face_animation",
+                        "/osceleton/face_animation",
                         sensorId, user,
                         c[AnimationUnit.LipRaiser],
                         c[AnimationUnit.LipStretcher],
@@ -282,7 +282,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 }
                 array[count] = time;
                 osc.Send(new OscElement(
-                    "/face_feature",
+                    "/osceleton/face_feature",
                     array));
             }
 /*            if (fileWriter != null)
