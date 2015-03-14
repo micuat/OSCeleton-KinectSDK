@@ -108,6 +108,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         // helper to convert EMGU image to WPF Image Source
         private InteropBitmapHelper DisplayImageHelper = null;
 
+        System.Drawing.Rectangle roi = new System.Drawing.Rectangle(0, 0, 0, 0);
+
         /// <summary>
         /// Width of output drawing
         /// </summary>
@@ -397,7 +399,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             if (((showRGB || showDepth) && sensors.FirstOrDefault() == sensor) || faceTracking)
             {
                 sensor.ColorStream.Enable(ColorImageFormat.RgbResolution640x480Fps30);
-                sensor.DepthStream.Enable(DepthImageFormat.Resolution320x240Fps30);
+                sensor.DepthStream.Enable(DepthImageFormat.Resolution640x480Fps30);
                 sensor.DepthStream.Range = DepthRange.Default;
                 sensor.SkeletonStream.EnableTrackingInNearRange = false;
                 sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Default;
@@ -529,29 +531,46 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     sensor.ColorStream.FrameWidth, sensor.ColorStream.FrameHeight));
             }
 
+            // pick which skeleton to track
+            int playerId = TrackClosestSkeleton(sensor, skeletons[sensor]);
+            Skeleton skeleton = null;
+            if (playerId > 0) skeleton = skeletons[sensor].First(s => s.TrackingId == playerId);
+
+            // create Emgu depth and playerMask images
+            depthImage = new Image<Gray, float>(sensor.DepthStream.FrameWidth, sensor.DepthStream.FrameHeight);
+            playerMasks = new Image<Gray, Byte>(sensor.DepthStream.FrameWidth, sensor.DepthStream.FrameHeight);
+
+            int maxdepth = sensor.DepthStream.MaxDepth;
+
+            // loop over each row and column of the depth 
+            // this can be slow, but only way to preserve full depth information
+            int depthW = sensor.DepthStream.FrameWidth;
+            int depthH = sensor.DepthStream.FrameHeight;
+
+            if (skeleton != null)
             {
-                // create Emgu depth and playerMask images
-                depthImage = new Image<Gray, float>(sensor.DepthStream.FrameWidth, sensor.DepthStream.FrameHeight);
-                playerMasks = new Image<Gray, Byte>(sensor.DepthStream.FrameWidth, sensor.DepthStream.FrameHeight);
-
-                int maxdepth = sensor.DepthStream.MaxDepth;
-
-                // loop over each row and column of the depth 
-                // this can be slow, but only way to preserve full depth information
-                int depthW = sensor.DepthStream.FrameWidth;
-                int depthH = sensor.DepthStream.FrameHeight;
+                var p = SkeletonPointToScreen(sensor, skeleton.Joints[JointType.Head].Position);
+                int headSize = 200;
+                roi = new System.Drawing.Rectangle((int)p.X - headSize / 2, (int)p.Y - headSize / 2, headSize, headSize);
+            }
+            if (roi.Width > 0)
+            {
                 int i;
-                for (int y = 0; y < depthH; y++)
+                if (roi.X >= 0 && roi.X + roi.Width < depthW &&
+                    roi.Y >= 0 && roi.Y + roi.Height < depthH)
                 {
-                    for (int x = 0; x < depthW; x++)
+                    for (int y = roi.Y; y < roi.Bottom; y++)
                     {
-                        // calculate index into depth array
-                        i = x + (y * depthW);
-                        DepthImagePixel depthPixel = this.depthPixelData[sensor][i];
+                        for (int x = roi.X; x < roi.Right; x++)
+                        {
+                            // calculate index into depth array
+                            i = x + (y * depthW);
+                            DepthImagePixel depthPixel = this.depthPixelData[sensor][i];
 
-                        // save pixel to images
-                        depthImage.Data[y, x, 0] = (depthPixel.Depth < maxdepth) ? depthPixel.Depth : maxdepth;
-                        playerMasks.Data[y, x, 0] = (byte)depthPixel.PlayerIndex;
+                            // save pixel to images
+                            depthImage.Data[y, x, 0] = (depthPixel.Depth < maxdepth) ? depthPixel.Depth : maxdepth;
+                            playerMasks.Data[y, x, 0] = (byte)depthPixel.PlayerIndex;
+                        }
                     }
                 }
 
@@ -569,58 +588,55 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
             #endregion
 
-            // pick which skeleton to track
-            int playerId = TrackClosestSkeleton(sensor, skeletons[sensor]);
-            Skeleton skeleton = null;
-            if (playerId > 0) skeleton = skeletons[sensor].First(s => s.TrackingId == playerId);
-
-
             #region use the emgu images to do something interesting
 
             // DEMO 1: blur and boost
-            if (skeleton != null && colourImage != null
+            if (roi.Width > 0 && skeleton != null && colourImage != null
                 && depthImage != null)
             {
-                //SkeletonPoint sleft = skeleton.Joints[JointType.HandLeft].Position;
-                //SkeletonPoint sright = skeleton.Joints[JointType.HandRight].Position;
-                //double hand_x_dist = Math.Abs(sleft.X - sright.Y);
-                //double hand_y_dist = Math.Abs(sleft.Y - sright.Y);
+                depthImage.ROI = roi;
+                var img = depthImage.Convert<Gray, Byte>();
+                img._ThresholdToZeroInv(img.GetAverage());
+                img._EqualizeHist();
+                var xDeriv = img.Sobel(1, 0, 3);
+                var template = new Image<Gray, float>(25, 5);
+                int n = 5;
+                for (int i = 0; i < n; i++)
+                {
+                    for (int j = 0; j < 5; j++) {
+                        template.Data[j, 5 + i, 0] = -2 * (n - i);
+                        template.Data[j, 24 - 5 - i, 0] = 2 * (n - i);
+                    }
+                }
+                var matchingResult = xDeriv.MatchTemplate(template, Emgu.CV.CvEnum.TM_TYPE.CV_TM_CCORR);
+                var temp = matchingResult.ThresholdToZero(matchingResult.GetAverage());
 
-                //// scale by 2 to speed up
-                //displayImage = colourImage.Resize(0.5, INTER.CV_INTER_NN);
-                //// displayImage = colourImage.Copy(); // slower
+                for (int y = 0; y < temp.Height; y++)
+                {
+                    for (int x = 0; x < temp.Width; x++)
+                    {
+                        int left = x - 10;
+                        if (left < 0) left = 0;
+                        int right = x + 10;
+                        if (right > temp.Width) right = temp.Width - 1;
+                        if (img.Data[y, left, 0] == 0 || img.Data[y, right, 0] == 0)
+                        {
+                            temp.Data[y, x, 0] = 0;
+                        }
+                    }
+                }
+                debugImg1 = temp.Convert<Gray, byte>().Canny(220, 250).Convert<Bgr, byte>();
+                //debugImg2 = xDeriv.AbsDiff(new Gray(0)).Convert<Bgr, byte>();
+                debugImg2 = img.Convert<Bgr, byte>();
 
-                //// boost the RGB values based on vertical hand distance 
-                //float boost = 3 - (float)(hand_y_dist * 5);
-                //displayImage = colourImage.Convert(delegate(Byte b)
-                //{ return (byte)((b * boost < 255) ? (b * boost) : 255); });
-
-                //// blur based on horizontal hand distance
-                //int blur = (int)(hand_x_dist * 20);
-                //if (blur > 0)
-                //    displayImage = displayImage.SmoothBlur(blur, blur);
-
-                var p = SkeletonPointToScreen(sensor, skeleton.Joints[JointType.Head].Position);
-                int headSize = 100;
-                var roi = new System.Drawing.Rectangle((int)p.X / 2 - headSize / 2, (int)p.Y / 2 - headSize / 2, headSize, headSize);
-                Image<Gray, Single> img = depthImage.Convert<Gray, Single>();
-//                Image<Gray, Single> img = depthImage.Convert<Gray, Single>() * 1000;
-                if( roi.X + roi.Width < img.Width && roi.Y + roi.Height < img.Height )
-                    img.ROI = roi;
-                img = img.ThresholdToZeroInv(img.GetAverage());
-//                displayImage = img.Convert<Bgr, byte>();
-//                Image<Gray, Single> img = depthImage.Convert<Gray, Single>() * 100000;
-                var xDeriv = img.Sobel(1, 0, 5);
-                var yDeriv = img.Sobel(0, 1, 5);
-                displayImage = (xDeriv.AbsDiff(new Gray(0)) + yDeriv.AbsDiff(new Gray(0))).Convert<Bgr, byte>();
-//                displayImage = img.Convert<Bgr, byte>();
+                // display image
+                if (debugImg1 != null)
+                    CvInvoke.cvShowImage("debugImg1", debugImg1);
+                if (debugImg2 != null)
+                    CvInvoke.cvShowImage("debugImg2", debugImg2);
             }
 
             #endregion
-
-            // display image
-            if(displayImage != null)
-                CvInvoke.cvShowImage("debugImg1", displayImage);
         }
         
         private void SensorFrameHelper(KinectSensor sensor, Boolean allFrames) {
