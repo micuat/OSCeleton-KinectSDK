@@ -600,8 +600,20 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 //if (blur > 0)
                 //    displayImage = displayImage.SmoothBlur(blur, blur);
 
-                displayImage = colourImage.Copy();
-
+                var p = SkeletonPointToScreen(sensor, skeleton.Joints[JointType.Head].Position);
+                int headSize = 100;
+                var roi = new System.Drawing.Rectangle((int)p.X / 2 - headSize / 2, (int)p.Y / 2 - headSize / 2, headSize, headSize);
+                Image<Gray, Single> img = depthImage.Convert<Gray, Single>();
+//                Image<Gray, Single> img = depthImage.Convert<Gray, Single>() * 1000;
+                if( roi.X + roi.Width < img.Width && roi.Y + roi.Height < img.Height )
+                    img.ROI = roi;
+                img = img.ThresholdToZeroInv(img.GetAverage());
+//                displayImage = img.Convert<Bgr, byte>();
+//                Image<Gray, Single> img = depthImage.Convert<Gray, Single>() * 100000;
+                var xDeriv = img.Sobel(1, 0, 5);
+                var yDeriv = img.Sobel(0, 1, 5);
+                displayImage = (xDeriv.AbsDiff(new Gray(0)) + yDeriv.AbsDiff(new Gray(0))).Convert<Bgr, byte>();
+//                displayImage = img.Convert<Bgr, byte>();
             }
 
             #endregion
