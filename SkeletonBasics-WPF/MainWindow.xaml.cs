@@ -37,12 +37,12 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private bool faceTracking2DMesh = true;
         private bool faceTrackingHeadPose = true;
         private bool faceTrackingAnimationUnits = true;
-        private bool faceTrackingFeaturePoints = false;
+        private bool faceTrackingFeaturePoints = true;
         private bool writeOSC = true;
-        private bool writeCSV = true;
+        private bool writeCSV = false;
         private bool useUnixEpochTime = true;
         private String oscHost = "127.0.0.1";
-        private int oscPort = 57120;
+        private int oscPort = 57121;
         private const int skeletonCount = 6;
         private const int pointScale = 1000;
 
