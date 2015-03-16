@@ -94,6 +94,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         Image<Gray, float> depthImage;
         Image<Gray, byte> playerMasks;
 
+        Image<Gray, float> template;
+        
         // paint image
         Image<Bgr, byte> brushImage;
         Image<Gray, float> brushMask;
@@ -110,6 +112,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
         System.Drawing.Rectangle roi = new System.Drawing.Rectangle(0, 0, 0, 0);
 
+      Matrix<float> state;
+      Matrix<float> transitionMatrix;
+      Matrix<float> measurementMatrix;
+      Matrix<float> processNoise;
+      Matrix<float> measurementNoise;
+      Matrix<float> errorCovariancePost;
+      Kalman kal;
         /// <summary>
         /// Width of output drawing
         /// </summary>
@@ -278,6 +287,56 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             {
                 OpenNewCSVFile();
             }
+
+            template = new Image<Gray, float>(25, 5);
+            int n = 5;
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < 5; j++)
+                {
+                    template.Data[j, 5 + i, 0] = -2 * (n - i);
+                    template.Data[j, 24 - 5 - i, 0] = 2 * (n - i);
+                }
+            }
+
+            kal = new Kalman(6, 3, 0);
+            Matrix<float> state = new Matrix<float>(new float[]
+      {
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+      });
+            kal.CorrectedState = state;
+            state = new Matrix<float>(6, 1);
+            state[0, 0] = 0f; // x-pos
+            state[1, 0] = 0f; // y-pos
+            state[2, 0] = 0f; // x-velocity
+            state[3, 0] = 0f; // y-velocity
+            transitionMatrix = new Matrix<float>(new float[,]
+      {
+            {1, 0, 0, 1, 0, 0},
+            {0, 1, 0, 0, 1, 0},
+            {0, 0, 1, 0, 0, 1},
+            {0, 0, 0, 1, 0, 0},
+            {0, 0, 0, 0, 1, 0},
+            {0, 0, 0, 0, 0, 1}
+      });
+            measurementMatrix = new Matrix<float>(new float[,]
+      {
+            { 1, 0, 0, 0, 0, 0 },
+            { 0, 1, 0, 0, 0, 0 },
+            { 0, 0, 1, 0, 0, 0 }
+      });
+            measurementMatrix.SetIdentity();
+            processNoise = new Matrix<float>(6, 6);
+            processNoise.SetIdentity(new MCvScalar(1.0e-5));
+            measurementNoise = new Matrix<float>(3, 3);
+            measurementNoise.SetIdentity(new MCvScalar(1.0e+0));
+            errorCovariancePost = new Matrix<float>(6, 6);
+            errorCovariancePost.SetIdentity();
+            kal.TransitionMatrix = transitionMatrix;
+            kal.MeasurementNoiseCovariance = measurementNoise;
+            kal.ProcessNoiseCovariance = processNoise;
+            kal.ErrorCovariancePost = errorCovariancePost;
+            kal.MeasurementMatrix = measurementMatrix;
 
             // Create the drawing group we'll use for drawing
             this.drawingGroup = new DrawingGroup();
@@ -597,43 +656,105 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 depthImage.ROI = roi;
                 var img = depthImage.Convert<Gray, Byte>();
                 img._ThresholdToZeroInv(img.GetAverage());
-                img._EqualizeHist();
+                //img._EqualizeHist();
                 var xDeriv = img.Sobel(1, 0, 3);
-                var template = new Image<Gray, float>(25, 5);
-                int n = 5;
-                for (int i = 0; i < n; i++)
+                //var matchingResult = xDeriv.MatchTemplate(template, Emgu.CV.CvEnum.TM_TYPE.CV_TM_CCORR);
+                //var temp = matchingResult.ThresholdToZero(matchingResult.GetAverage());
+                var temp = new Image<Gray, Byte>(img.Width/2, img.Height/2);
+                List<int> labelCount = new List<int>();
+                labelCount.Add(0); // dummy
+                List<System.Drawing.PointF> labelTop = new List<System.Drawing.PointF>();
+                labelTop.Add(new System.Drawing.PointF(0, 0)); // dummy
+                for (int y = img.Height - 5; y > (int)(img.Height * 0.33); y -= 2)
                 {
-                    for (int j = 0; j < 5; j++) {
-                        template.Data[j, 5 + i, 0] = -2 * (n - i);
-                        template.Data[j, 24 - 5 - i, 0] = 2 * (n - i);
-                    }
-                }
-                var matchingResult = xDeriv.MatchTemplate(template, Emgu.CV.CvEnum.TM_TYPE.CV_TM_CCORR);
-                var temp = matchingResult.ThresholdToZero(matchingResult.GetAverage());
-
-                for (int y = 0; y < temp.Height; y++)
-                {
-                    for (int x = 0; x < temp.Width; x++)
+                    for (int x = 5; x < img.Width - 5; x += 2)
                     {
-                        int left = x - 10;
+                        int left = x - 5;
                         if (left < 0) left = 0;
-                        int right = x + 10;
-                        if (right > temp.Width) right = temp.Width - 1;
+                        int right = x + 5;
+                        if (right > img.Width) right = img.Width - 1;
                         if (img.Data[y, left, 0] == 0 || img.Data[y, right, 0] == 0)
                         {
-                            temp.Data[y, x, 0] = 0;
+//                            temp.Data[y, x, 0] = 0;
+                        }
+                        else
+                        {
+                            float th = 10;
+                            if (xDeriv.Data[y, left, 0] < th/2
+                                && xDeriv.Data[y, x, 0] > -th
+                                && xDeriv.Data[y, x, 0] < th
+                                && xDeriv.Data[y, right, 0] > th/2)
+                            {
+                                int curLabel = 0;
+                                if (temp.Data[y / 2 + 1, x / 2, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2, 0];
+                                else if (temp.Data[y / 2 + 1, x / 2 - 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 - 1, 0];
+                                else if (temp.Data[y / 2 + 1, x / 2 + 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 + 1, 0];
+                                if (curLabel == 0) {
+                                    curLabel = labelCount.Count ;
+                                    labelCount.Add(0);
+                                    labelTop.Add(new System.Drawing.PointF(x, y));
+                                }
+                                temp.Data[y / 2, x / 2, 0] = (byte)curLabel;
+                                labelCount[curLabel] += 1;
+                                labelTop[curLabel] = new System.Drawing.PointF(x, y);
+                            }
                         }
                     }
                 }
-                debugImg1 = temp.Convert<Gray, byte>().Canny(220, 250).Convert<Bgr, byte>();
-                //debugImg2 = xDeriv.AbsDiff(new Gray(0)).Convert<Bgr, byte>();
-                debugImg2 = img.Convert<Bgr, byte>();
+                int maxCount = 0;
+                int maxIndex = 0;
+                for (int i = 0; i < labelCount.Count; i++)
+                {
+                    if (labelCount[i] > maxCount)
+                    {
+                        maxCount = labelCount[i];
+                        maxIndex = i;
+                    }
+                }
 
+                //debugImg1 = temp.Convert<Gray, byte>().Canny(220, 250).Convert<Bgr, byte>();
+                //debugImg2 = xDeriv.AbsDiff(new Gray(0)).Convert<Bgr, byte>();
+                debugImg1 = (xDeriv+10).Convert<Bgr, byte>();
+                debugImg1._EqualizeHist();
+                img._EqualizeHist();
+                temp._EqualizeHist();
+                debugImg2 = temp.Convert<Bgr, byte>() * 255;
+                var debugImg3 = img.Copy().Convert<Bgr, byte>();
+                var debugImg4 = img.Copy();
+
+                if (maxIndex > 0 && maxCount > 5)
+                {
+                    var circle = new Emgu.CV.Structure.CircleF(labelTop[maxIndex], 10);
+                    debugImg3.Draw(circle, new Bgr(0, 0, 255), 1);
+
+                    int realX = (int)labelTop[maxIndex].X + roi.X;
+                    int realY = (int)labelTop[maxIndex].Y + roi.Y;
+                    DepthImagePixel depthPixel = this.depthPixelData[sensor][realX + (realY * depthW)];
+                    short depth = depthPixel.Depth;
+                    var dip = new DepthImagePoint();
+                    dip.Depth = depth;
+                    dip.X = realX;
+                    dip.Y = realY;
+                    var sp = sensor.CoordinateMapper.MapDepthPointToSkeletonPoint(DepthImageFormat.Resolution640x480Fps30, dip);
+
+                    Matrix<float> prediction = kal.Predict();
+                    Matrix<float> estimated = kal.Correct(new Matrix<float>(new float[] { sp.X, sp.Y, sp.Z }));
+                   
+
+                    if (osc != null)
+                    {
+                        osc.Send(new OscElement(
+                            "/osceleton/fingertip",
+                            sensorId, estimated[0, 0], estimated[1, 0], estimated[2, 0]));
+                    }
+                }
                 // display image
                 if (debugImg1 != null)
                     CvInvoke.cvShowImage("debugImg1", debugImg1);
                 if (debugImg2 != null)
                     CvInvoke.cvShowImage("debugImg2", debugImg2);
+                CvInvoke.cvShowImage("debugImg3", debugImg3);
+                CvInvoke.cvShowImage("debugImg4", debugImg4);
             }
 
             #endregion
