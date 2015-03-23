@@ -665,13 +665,15 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 labelCount.Add(0); // dummy
                 List<System.Drawing.PointF> labelTop = new List<System.Drawing.PointF>();
                 labelTop.Add(new System.Drawing.PointF(0, 0)); // dummy
-                for (int y = img.Height - 5; y > (int)(img.Height * 0.33); y -= 2)
+                List<System.Drawing.PointF> labelBottom = new List<System.Drawing.PointF>();
+                labelBottom.Add(new System.Drawing.PointF(0, 0)); // dummy
+                for (int y = img.Height - 5; y > (int)(img.Height * 0.4); y -= 2)
                 {
-                    for (int x = 5; x < img.Width - 5; x += 2)
+                    for (int x = 7; x < img.Width - 7; x += 2)
                     {
-                        int left = x - 5;
+                        int left = x - 7;
                         if (left < 0) left = 0;
-                        int right = x + 5;
+                        int right = x + 7;
                         if (right > img.Width) right = img.Width - 1;
                         if (img.Data[y, left, 0] == 0 || img.Data[y, right, 0] == 0)
                         {
@@ -679,35 +681,65 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                         }
                         else
                         {
-                            float th = 10;
-                            if (xDeriv.Data[y, left, 0] < th/2
-                                && xDeriv.Data[y, x, 0] > -th
-                                && xDeriv.Data[y, x, 0] < th
-                                && xDeriv.Data[y, right, 0] > th/2)
+                            float th = 0.5f;
+                            bool isConvex = false;
+                            for (int i = left; i < right && !isConvex; i++)
+                            {
+                                if (xDeriv.Data[y, i, 0] < 0 && xDeriv.Data[y, i+1, 0] < 0)
+                                {
+                                    for (int j = i + 2; j < right && !isConvex; j++)
+                                    {
+                                        if (xDeriv.Data[y, j, 0] < th && xDeriv.Data[y, j, 0] > -th
+                                            && xDeriv.Data[y, j+1, 0] < th && xDeriv.Data[y, j+1, 0] > -th)
+                                        {
+                                            for (int k = j + 2; k < right && !isConvex; k++)
+                                            {
+                                                if (xDeriv.Data[y, k, 0] > 0 && xDeriv.Data[y, k+1, 0] > 0)
+                                                {
+                                                    isConvex = true;
+                                                }
+                                                else if (xDeriv.Data[y, k, 0] < -th)
+                                                {
+                                                    break;
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (isConvex)
                             {
                                 int curLabel = 0;
                                 if (temp.Data[y / 2 + 1, x / 2, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2, 0];
+                                else if (temp.Data[y / 2, x / 2 - 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2, 0];
                                 else if (temp.Data[y / 2 + 1, x / 2 - 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 - 1, 0];
                                 else if (temp.Data[y / 2 + 1, x / 2 + 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 + 1, 0];
-                                if (curLabel == 0) {
+                                else if (temp.Data[y / 2 + 2, x / 2, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 - 1, 0];
+                                else if (temp.Data[y / 2 + 2, x / 2 + 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 + 1, 0];
+                                else if (temp.Data[y / 2 + 2, x / 2 - 1, 0] > 0) curLabel = temp.Data[y / 2 + 1, x / 2 - 1, 0];
+                                if (curLabel == 0)
+                                {
                                     curLabel = labelCount.Count ;
                                     labelCount.Add(0);
                                     labelTop.Add(new System.Drawing.PointF(x, y));
+                                    labelBottom.Add(new System.Drawing.PointF(x, y));
                                 }
                                 temp.Data[y / 2, x / 2, 0] = (byte)curLabel;
+                                img.Data[y, x, 0] = 255;// (byte)curLabel;
                                 labelCount[curLabel] += 1;
                                 labelTop[curLabel] = new System.Drawing.PointF(x, y);
                             }
                         }
                     }
                 }
-                int maxCount = 0;
+                float maxCount = 0;
                 int maxIndex = 0;
                 for (int i = 0; i < labelCount.Count; i++)
                 {
-                    if (labelCount[i] > maxCount)
+                    if (labelBottom[i].Y - labelTop[i].Y > maxCount)
                     {
-                        maxCount = labelCount[i];
+                        maxCount = labelBottom[i].Y - labelTop[i].Y;
                         maxIndex = i;
                     }
                 }
@@ -718,17 +750,26 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 debugImg1._EqualizeHist();
                 img._EqualizeHist();
                 temp._EqualizeHist();
-                debugImg2 = temp.Convert<Bgr, byte>() * 255;
+                //debugImg2 = temp.Resize(2.0, Emgu.CV.CvEnum.INTER.CV_INTER_LINEAR).Convert<Bgr, byte>() * 255;
+                //var debugImg3 = (img.Copy() + temp.Resize(2.0, Emgu.CV.CvEnum.INTER.CV_INTER_NN)).Convert<Bgr, byte>();
                 var debugImg3 = img.Copy().Convert<Bgr, byte>();
-                var debugImg4 = img.Copy();
+                //var debugImg4 = img.Copy().Convert<Bgr, byte>();
 
-                if (maxIndex > 0 && maxCount > 5)
+                if (maxIndex > 0 && maxCount > 7)
                 {
                     var circle = new Emgu.CV.Structure.CircleF(labelTop[maxIndex], 10);
+                    debugImg1.Draw(circle, new Bgr(0, 0, 255), 1);
                     debugImg3.Draw(circle, new Bgr(0, 0, 255), 1);
 
                     int realX = (int)labelTop[maxIndex].X + roi.X;
                     int realY = (int)labelTop[maxIndex].Y + roi.Y;
+
+                    Matrix<float> prediction = kal.Predict();
+                    Matrix<float> estimated = kal.Correct(new Matrix<float>(new float[] { realX, realY, 0 }));
+                    
+                    realX = (int)estimated[0, 0];
+                    realY = (int)estimated[1, 0];
+
                     DepthImagePixel depthPixel = this.depthPixelData[sensor][realX + (realY * depthW)];
                     short depth = depthPixel.Depth;
                     var dip = new DepthImagePoint();
@@ -737,24 +778,21 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     dip.Y = realY;
                     var sp = sensor.CoordinateMapper.MapDepthPointToSkeletonPoint(DepthImageFormat.Resolution640x480Fps30, dip);
 
-                    Matrix<float> prediction = kal.Predict();
-                    Matrix<float> estimated = kal.Correct(new Matrix<float>(new float[] { sp.X, sp.Y, sp.Z }));
-                   
 
                     if (osc != null)
                     {
                         osc.Send(new OscElement(
                             "/osceleton/fingertip",
-                            sensorId, estimated[0, 0], estimated[1, 0], estimated[2, 0]));
+                            sensorId, (float)sp.X, (float)sp.Y, (float)sp.Z));
                     }
                 }
                 // display image
                 if (debugImg1 != null)
                     CvInvoke.cvShowImage("debugImg1", debugImg1);
-                if (debugImg2 != null)
-                    CvInvoke.cvShowImage("debugImg2", debugImg2);
+                //if (debugImg2 != null)
+                //    CvInvoke.cvShowImage("debugImg2", debugImg2);
                 CvInvoke.cvShowImage("debugImg3", debugImg3);
-                CvInvoke.cvShowImage("debugImg4", debugImg4);
+                //CvInvoke.cvShowImage("debugImg4", debugImg4);
             }
 
             #endregion
